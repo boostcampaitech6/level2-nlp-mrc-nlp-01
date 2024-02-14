@@ -34,3 +34,12 @@ def main():
 train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 --do_train
 ```
 
+
+
+
+
+### Results
+
+|model name| batch size | Extract Macth | F1 Score | 
+|:----:|:----:|:----:|:----:|
+|ainize/klue-bert-base-mrc| 32 | | |
