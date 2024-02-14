@@ -100,12 +100,3 @@ class DataTrainingArguments:
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
     )
-
-
-
-    #################################################################################
-    output_dir: str = field(
-        default=None
-    )
-
-    #################################################################################
