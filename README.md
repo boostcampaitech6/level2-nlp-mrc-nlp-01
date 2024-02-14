@@ -40,6 +40,7 @@ train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 
 
 ### Results
 
-|model name| batch size | Extract Macth | F1 Score | 
-|:----:|:----:|:----:|:----:|
-|ainize/klue-bert-base-mrc| 32 | | |
+|model name| batch size | epochs | Extract Macth | F1 Score | 
+|:----:|:----:|:----:|:----:|:----:|
+|klue/bert-base| 32 | 3 | 38.3300 | 49.0300 |
+|ainize/klue-bert-base-mrc| 32 | 3 | 37.5000 | 48.5800 |
