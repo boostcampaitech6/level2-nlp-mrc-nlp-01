@@ -45,4 +45,4 @@ train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 
 |klue/bert-base| 32 | 3 | **38.3300** | **49.0300** |
 |klue/bert-base | 32 | 10 | 38.3300 | 49.0300 | 
 |ainize/klue-bert-base-mrc| 32 | 3 | 37.5000 | 48.5800 |
-|kcbert-base-finetuned-squad | 32 | 10 |  | 
+|kcbert-base-finetuned-squad | 32 | 10 | 22.9200 | 35.8100 | 
