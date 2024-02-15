@@ -31,7 +31,7 @@ def main():
     training_args.per_device_train_batch_size = model_args.batch_size
 
 
-train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 --do_train
+train.py --model_name klue/bert-base --output_dir ../parameters --batch_size 32 --do_train
 ```
 
 
