@@ -35,6 +35,12 @@ train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 
 ```
 
 
+### Inference
+
+```
+python3 inference.py --output_dir ../output --dataset_name ../data/test_dataset/ --model_name_or_path ../parameters/kcbert-base-finetuned-squad --do_predict --overwrite_output_dir True
+```
+
 
 
 
