@@ -50,6 +50,7 @@ python3 inference.py --output_dir ../output --dataset_name ../data/test_dataset/
 |:----:|:----:|:----:|:----:|:----:|
 |klue/bert-base| 32 | 3 | **38.3300** | **49.0300** |
 |klue/bert-base | 32 | 10 | 38.3300 | 49.0300 | 
+|klue/roberta-large | 16 | 10 | 42.5000 | 53.9200 | 
 |ainize/klue-bert-base-mrc| 32 | 3 | 37.5000 | 48.5800 |
 |kcbert-base-finetuned-squad | 32 | 10 | 22.9200 | 35.8100 | 
 |Forturne/bert-base-finetuned-klue-mrc | 32 | 10 |36.6700 | 49.2100 |
