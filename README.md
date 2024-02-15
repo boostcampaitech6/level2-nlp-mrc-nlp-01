@@ -46,5 +46,6 @@ train.py --model_name=klue/bert-base --output_dir ../parameters --batch_size 32 
 |klue/bert-base | 32 | 10 | 38.3300 | 49.0300 | 
 |ainize/klue-bert-base-mrc| 32 | 3 | 37.5000 | 48.5800 |
 |kcbert-base-finetuned-squad | 32 | 10 | 22.9200 | 35.8100 | 
-|Forturne/bert-base-finetuned-klue-mrc | 32 | 10 |36.6700 | 49.2100
-|domyoung/squad-test | 32 | 10 |41.2500 | 51.8100
+|Forturne/bert-base-finetuned-klue-mrc | 32 | 10 |36.6700 | 49.2100 |
+|domyoung/squad-test | 32 | 10 |41.2500 | 51.8100 |
+|Seonwhee-Genome/bert-base | 32 | 10 |40.0000 | 51.7800 |
