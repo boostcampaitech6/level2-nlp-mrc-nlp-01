@@ -11,6 +11,9 @@ import pickle
 import re
 from datasets import load_dataset
 from utils_qa import *
+from konlpy.tag import Mecab 
+from rank_bm25 import BM25Okapi
+
 def seed_everything(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
