@@ -25,32 +25,11 @@ from utils_qa import get_negative_dataset
 from dense_train_util import InBatchNegativeRandomDataset
 
 
-def compute_loss(q_outputs, p_outputs, hn_outputs, margin=0.5):
-    """
-    Triplet loss 계산을 위한 함수
-    - q_outputs: 질문 인코딩 벡터
-    - p_outputs: positive context 인코딩 벡터
-    - hn_outputs: hard negative context 인코딩 벡터
-    - margin: 마진 값, positive context와 hard negative context 간의 최소 거리 차이
-    """
-    # 질문과 긍정적 컨텍스트 간의 유사도 점수 계산
-    positive_scores = torch.diag(torch.matmul(q_outputs, p_outputs.T))
-    
-    # 질문과 하드 네거티브 컨텍스트 간의 유사도 점수 계산
-    negative_scores = torch.diag(torch.matmul(q_outputs, hn_outputs.T))
-    
-    # Triplet loss 계산
-    # losses = F.relu(positive_scores - negative_scores + margin)
-    losses = F.relu(negative_scores - positive_scores + margin)
-    loss = losses.mean()
-    
-    return loss
-
 def train(args, dataset, p_model, q_model):
     # 변경점
     # answer 하나 라벨 별 균등
     train_sampler = RandomSampler(dataset)
-    train_dataloader = DataLoader(dataset, sampler= train_sampler, batch_size = args.per_device_train_batch_size)
+    train_dataloader = DataLoader(dataset, sampler= train_sampler, batch_size = args.per_device_train_batch_size, drop_last= True)
 
     no_decay = ['bias', 'LayerNorm.weight']
     optimizer_grouped_parameters = [
@@ -111,10 +90,8 @@ def train(args, dataset, p_model, q_model):
 
             p_outputs = p_model(**p_inputs)  # (batch_size, emb_dim)
             q_outputs = q_model(**q_inputs)  # (batch_size, emb_dim)
-            # hn_outputs = p_model(**hn_inputs) # (batch_size, emb_dim)
 
             # Calculate similarity score & loss
-            # loss = compute_loss(q_outputs, p_outputs, hn_outputs, margin= 0.5)
             sim_scores = torch.matmul(
             q_outputs, torch.transpose(p_outputs, 0, 1)
             )  # (batch_size, emb_dim) x (emb_dim, batch_size * 2) = (batch_size, batch_size * 2)
