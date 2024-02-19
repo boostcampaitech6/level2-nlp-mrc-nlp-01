@@ -25,9 +25,6 @@ def seed_everything(seed: int = 42):
 
 
 class InBatchNegativeRandomDataset(Dataset):
-    '''
-    dense retrieval 모델을 학습시킬 데이터 셋
-    '''
     def __init__(
         self,
         data_name: str,
@@ -43,25 +40,6 @@ class InBatchNegativeRandomDataset(Dataset):
             tokenizer,
             # sample_n
         )
-        '''
-        data_path
-        -> query - context로 이루어진 dataset의 경로
-        
-        bm25_path
-        -> query에 대해서 bm25로 찾아낸 유사도가 높은 context 데이터
-        retrieval/SparseRetrieval의 get_topk_doc_id_and_score_for_querys 메서드로 
-        해당 bin 파일을 만들 수 있습니다.
-
-        max_context_seq_length
-        -> context의 max_length
-
-        max_question_seq_length
-        -> question의 max_lenth
-
-        neg_num
-        -> retrieval 학습에 사용할 Inbatch negative 외에 hard negative sample의 갯수
-
-        '''
 
         self.p_input_ids = preprocess_data[0]
         self.p_attension_mask = preprocess_data[1]
