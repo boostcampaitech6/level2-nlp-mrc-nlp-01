@@ -15,7 +15,13 @@ class ModelArguments:
         },
     )
     config_name: Optional[str] = field(
-        default=None,
+        default="klue/roberta-large",
+        metadata={
+            "help": "Pretrained config name or path if not the same as model_name"
+        },
+    )
+    config_name_dpr: Optional[str] = field(
+        default='klue/roberta-base',
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
@@ -57,7 +63,7 @@ class DataTrainingArguments:
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
     max_seq_length: int = field(
-        default=384,
+        default=512,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -78,7 +84,7 @@ class DataTrainingArguments:
         },
     )
     max_answer_length: int = field(
-        default=30,
+        default=64,
         metadata={
             "help": "The maximum length of an answer that can be generated. This is needed because the start "
             "and end predictions are not conditioned on one another."
@@ -92,11 +98,18 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=10,
+        default=20,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
     )
     use_faiss: bool = field(
         default=False, metadata={"help": "Whether to build with faiss"}
+    )
+    # save_total_limit: int = field(
+    #     default = 1,
+    #     metadata = {"help" : "Number of save model checkpoint"}
+    # )
+    dense_encoder: bool = field(
+        default = True, metadata = {"help": "Whether to run passage retrieval using dense embedding."}
     )
