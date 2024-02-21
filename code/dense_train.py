@@ -21,7 +21,6 @@ from transformers import (AutoTokenizer,
                           RobertaPreTrainedModel,
                           get_linear_schedule_with_warmup)
 from dense_models import RobertaEncoder, BertEncoder
-from utils_qa import get_negative_dataset
 from dense_train_util import InBatchNegativeRandomDataset
 
 
