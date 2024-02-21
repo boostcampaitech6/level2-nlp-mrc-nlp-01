@@ -42,6 +42,7 @@ class SparseRetrieval:
         # tokenizer,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
+        remove_char=False,
     ):
 
         """
@@ -78,6 +79,12 @@ class SparseRetrieval:
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
+        if remove_char:
+            pattern = '[^A-Za-z0-9가-힣 ]'
+            self.contexts_before=[x for x in self.contexts]
+            for i in range(len(self.contexts)):
+                self.contexts[i]=re.sub(pattern, '', self.contexts_before[i])
+        
         self.tokenized_corpus = [
             self.tokenize_fn(text) for text in self.contexts
         ]
