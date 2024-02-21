@@ -86,7 +86,7 @@ def main():
         else model_args.model_name_or_path,
         use_fast=True,
     )
-    mecab = Mecab()
+    # mecab = Mecab()
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -109,7 +109,7 @@ def main():
     elif data_args.dense_encoder_type == 'sparse':
         if data_args.eval_retrieval:
             datasets = run_sparse_retrieval(
-                tokenizer.tokenize, datasets, training_args, data_args,
+                model_args, datasets, training_args, data_args,
             )
         torch.cuda.empty_cache()
         # eval or predict mrc model
@@ -131,6 +131,7 @@ def main():
 
 def run_sparse_retrieval(
     # tokenize_fn: Callable[[str], List[str]],
+    args: ModelArguments,
     datasets: DatasetDict,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
@@ -140,7 +141,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrieval(
-         data_path=data_path, context_path=context_path
+         args = args, data_path=data_path, context_path=context_path
     )
     retriever.get_sparse_embedding()
 
