@@ -110,6 +110,6 @@ class DataTrainingArguments:
     #     default = 1,
     #     metadata = {"help" : "Number of save model checkpoint"}
     # )
-    dense_encoder: bool = field(
-        default = True, metadata = {"help": "Whether to run passage retrieval using dense embedding."}
+    dense_encoder_type: str = field(
+        default = 'hybrid', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
     )
