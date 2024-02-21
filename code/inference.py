@@ -141,7 +141,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrieval(
-         args = args, data_path=data_path, context_path=context_path
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path, remove_char=data_args.remove_char
     )
     retriever.get_sparse_embedding()
 
