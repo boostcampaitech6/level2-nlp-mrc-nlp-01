@@ -801,6 +801,7 @@ class HybridRetrieval:
     ):
         self.sparse_retrieval = SparseRetrieval(
             # tokenize_fn = tokenize_fn,
+            args = args,
             data_path = data_path,
             context_path = context_path
             )
