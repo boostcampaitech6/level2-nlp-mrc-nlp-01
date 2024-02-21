@@ -10,10 +10,10 @@ import pandas as pd
 import pickle
 import re
 from datasets import load_dataset
-from utils_qa import *
 from konlpy.tag import Mecab 
 from rank_bm25 import BM25Okapi
-
+import json
+# from utils_qa import *
 def seed_everything(seed: int = 42):
     random.seed(seed)
     np.random.seed(seed)
@@ -25,6 +25,9 @@ def seed_everything(seed: int = 42):
 
 
 class InBatchNegativeRandomDataset(Dataset):
+    '''
+    dense retrieval 모델을 학습시킬 데이터 셋
+    '''
     def __init__(
         self,
         data_name: str,
@@ -82,7 +85,6 @@ class InBatchNegativeRandomDataset(Dataset):
             get_negative_dataset(data_name)
         print('Load Dataset...')
         dataset =  load_dataset('json', data_files= data_path)
-        print(f"Train length: {len(dataset['train'])}")
         # sample_idx = np.random.choice(range(len(dataset['train'])), sample_n)
         # dataset = dataset['train'][sample_idx]
         dataset = dataset['train']
