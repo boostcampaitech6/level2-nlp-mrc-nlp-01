@@ -1,0 +1,11 @@
+torch==1.13
+datasets==2.15.0
+transformers==4.25.1
+tqdm
+pandas
+scikit-learn
+konlpy
+JPype1
+gensim
+# faiss install (if you want to)
+faiss-gpu
