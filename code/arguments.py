@@ -113,3 +113,7 @@ class DataTrainingArguments:
     dense_encoder_type: str = field(
         default = 'hybrid', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
     )
+    
+    remove_char: bool = field(
+        default=False, metadata={"help": "Whether to remove special character before embedding"}
+    )
