@@ -914,6 +914,4 @@ class HybridRetrieval:
             final_scores.append(selected_scores)
 
         return final_scores, final_indices
-
-
-
+    
