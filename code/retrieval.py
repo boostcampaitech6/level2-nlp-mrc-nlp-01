@@ -19,7 +19,7 @@ from dense_models import BertEncoder, RobertaEncoder
 from rank_bm25 import BM25Okapi
 from konlpy.tag import Mecab
 from gensim.corpora import Dictionary
-from gensim.models import TfidfModel, OkapiBM25Model
+from gensim.models import TfidfModel, OkapiBM25Model, LuceneBM25Model
 from gensim.similarities import SparseMatrixSimilarity
 seed = 2024
 random.seed(seed) # python random seed 고정
@@ -37,11 +37,12 @@ def timer(name):
 class SparseRetrieval:
     def __init__(
         self,
+        args,
         # tokenize_fn,
         # tokenizer,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
-    ) -> NoReturn:
+    ):
 
         """
         Arguments:
@@ -64,9 +65,10 @@ class SparseRetrieval:
             Passage 파일을 불러오고 TfidfVectorizer를 선언하는 기능을 합니다.
         """
 
-        self.data_path = data_path
+        # self.data_path = data_path
         mecab = Mecab()
         self.tokenize_fn = mecab.morphs
+
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -79,11 +81,11 @@ class SparseRetrieval:
         self.tokenized_corpus = [
             self.tokenize_fn(text) for text in self.contexts
         ]
-
+        # self.get_sparse_embedding()
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
 
-    def get_sparse_embedding(self) -> NoReturn:
+    def get_sparse_embedding(self):
 
         """
         Summary:
@@ -94,9 +96,9 @@ class SparseRetrieval:
 
         # Pickle을 저장합니다.
         #------------------------------------------------------------
-        bm_dic_path = os.path.join(self.data_path, "bm_dic.bin")
-        bm_model_path = os.path.join(self.data_path, "bm_model.bin")
-        bm_index_path = os.path.join(self.data_path,"bm_index.bin")
+        bm_dic_path = os.path.join('../data/', "bm_dic.bin")
+        bm_model_path = os.path.join('../data/', "bm_model.bin")
+        bm_index_path = os.path.join('../data/',"bm_index.bin")
         
         if os.path.isfile(bm_dic_path) and os.path.isfile(bm_model_path) and os.path.isfile(bm_index_path):
             with open(bm_dic_path, 'rb') as file:
@@ -109,6 +111,7 @@ class SparseRetrieval:
         else:
             self.dictionary = Dictionary(self.tokenized_corpus)
             self.bm25_model = OkapiBM25Model(dictionary=self.dictionary)
+            # self.bm25_model = LuceneBM25Model(dictionary=self.dictionary)
             self.bm25_corpus = self.bm25_model[list(map(self.dictionary.doc2bow, self.tokenized_corpus))]
             self.bm25_index = SparseMatrixSimilarity(self.bm25_corpus, 
                                                 num_docs=len(self.tokenized_corpus), 
@@ -185,7 +188,7 @@ class SparseRetrieval:
                 Ground Truth가 없는 Query (test) -> Retrieval한 Passage만 반환합니다.
         """
 
-        assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
+        # assert self.p_embedding is not None, "get_sparse_embedding() 메소드를 먼저 수행해줘야합니다."
 
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_relevant_doc(query_or_dataset, k=topk)
@@ -198,7 +201,7 @@ class SparseRetrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
-
+ 
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
@@ -270,9 +273,7 @@ class SparseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         #-----------------------------------
-                # self.dictionary 
-                # self.bm25_model 
-                # self.bm25_index 
+
         query_vec = [self.tokenize_fn(i) for i in queries]
         doc_scores = []
         doc_indices = []
