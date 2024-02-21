@@ -42,6 +42,7 @@ def main():
     # [참고] argument를 manual하게 수정하고 싶은 경우에 아래와 같은 방식을 사용할 수 있습니다
     training_args.per_device_train_batch_size = model_args.batch_size
     training_args.num_train_epochs=model_args.num_epochs
+    training_args.save_total_limit = 2
     # print(training_args.per_device_train_batch_size)
 
     print(f"model is from {model_args.model_name_or_path}")
@@ -232,7 +233,7 @@ def run_mrc(
             stride=data_args.doc_stride,
             return_overflowing_tokens=True,
             return_offsets_mapping=True,
-            # return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
+            return_token_type_ids=False, # roberta모델을 사용할 경우 False, bert를 사용할 경우 True로 표기해야합니다.
             padding="max_length" if data_args.pad_to_max_length else False,
         )
 
