@@ -14,8 +14,13 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
 
 import torch
-from transformers import RobertaConfig
-from dense_models import BertEncoder, RobertaEncoder, AutoTokenizer
+from transformers import RobertaConfig, AutoConfig, AutoTokenizer
+from dense_models import BertEncoder, RobertaEncoder
+from rank_bm25 import BM25Okapi
+from konlpy.tag import Mecab
+from gensim.corpora import Dictionary
+from gensim.models import TfidfModel, OkapiBM25Model
+from gensim.similarities import SparseMatrixSimilarity
 seed = 2024
 random.seed(seed) # python random seed 고정
 np.random.seed(seed) # numpy random seed 고정
@@ -32,7 +37,8 @@ def timer(name):
 class SparseRetrieval:
     def __init__(
         self,
-        tokenize_fn,
+        # tokenize_fn,
+        # tokenizer,
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
     ) -> NoReturn:
@@ -59,6 +65,8 @@ class SparseRetrieval:
         """
 
         self.data_path = data_path
+        mecab = Mecab()
+        self.tokenize_fn = mecab.morphs
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -68,10 +76,9 @@ class SparseRetrieval:
         print(f"Lengths of unique contexts : {len(self.contexts)}")
         self.ids = list(range(len(self.contexts)))
 
-        # Transform by vectorizer
-        self.tfidfv = TfidfVectorizer(
-            tokenizer=tokenize_fn, ngram_range=(1, 2), max_features=50000,
-        )
+        self.tokenized_corpus = [
+            self.tokenize_fn(text) for text in self.contexts
+        ]
 
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
@@ -86,26 +93,36 @@ class SparseRetrieval:
         """
 
         # Pickle을 저장합니다.
-        pickle_name = f"sparse_embedding.bin"
-        tfidfv_name = f"tfidv.bin"
-        emd_path = os.path.join(self.data_path, pickle_name)
-        tfidfv_path = os.path.join(self.data_path, tfidfv_name)
-
-        if os.path.isfile(emd_path) and os.path.isfile(tfidfv_path):
-            with open(emd_path, "rb") as file:
-                self.p_embedding = pickle.load(file)
-            with open(tfidfv_path, "rb") as file:
-                self.tfidfv = pickle.load(file)
+        #------------------------------------------------------------
+        bm_dic_path = os.path.join(self.data_path, "bm_dic.bin")
+        bm_model_path = os.path.join(self.data_path, "bm_model.bin")
+        bm_index_path = os.path.join(self.data_path,"bm_index.bin")
+        
+        if os.path.isfile(bm_dic_path) and os.path.isfile(bm_model_path) and os.path.isfile(bm_index_path):
+            with open(bm_dic_path, 'rb') as file:
+                self.dictionary = pickle.load(file)
+            with open(bm_model_path, 'rb') as file:
+                self.bm25_model = pickle.load(file)
+            with open(bm_index_path, 'rb') as file:
+                self.bm25_index = pickle.load(file)
             print("Embedding pickle load.")
         else:
-            print("Build passage embedding")
-            self.p_embedding = self.tfidfv.fit_transform(self.contexts)
-            print(self.p_embedding.shape)
-            with open(emd_path, "wb") as file:
-                pickle.dump(self.p_embedding, file)
-            with open(tfidfv_path, "wb") as file:
-                pickle.dump(self.tfidfv, file)
+            self.dictionary = Dictionary(self.tokenized_corpus)
+            self.bm25_model = OkapiBM25Model(dictionary=self.dictionary)
+            self.bm25_corpus = self.bm25_model[list(map(self.dictionary.doc2bow, self.tokenized_corpus))]
+            self.bm25_index = SparseMatrixSimilarity(self.bm25_corpus, 
+                                                num_docs=len(self.tokenized_corpus), 
+                                                num_terms=len(self.dictionary),
+                                                normalize_queries=False, 
+                                                normalize_documents=False)
+            with open(bm_dic_path, 'wb') as file:
+                pickle.dump(self.dictionary, file)
+            with open(bm_model_path, 'wb') as file:
+                pickle.dump(self.bm25_model, file)
+            with open(bm_index_path, 'wb') as file:
+                pickle.dump(self.bm25_index, file)
             print("Embedding pickle saved.")
+ 
 
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
@@ -220,21 +237,23 @@ class SparseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-
         with timer("transform"):
-            query_vec = self.tfidfv.transform([query])
-        assert (
-            np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+            query_vec = self.tokenize_fn(query)
+        # assert (
+        #     np.sum(query_vec) != 0
+        # ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
         with timer("query ex search"):
-            result = query_vec * self.p_embedding.T
-        if not isinstance(result, np.ndarray):
-            result = result.toarray()
-
-        sorted_result = np.argsort(result.squeeze())[::-1]
-        doc_score = result.squeeze()[sorted_result].tolist()[:k]
-        doc_indices = sorted_result.tolist()[:k]
+            #-----------------------------------
+            bm_query = self.bm25_model[self.dictionary.doc2bow(query_vec)]
+            doc_score = self.bm25_index[bm_query]
+            doc_indices = np.argsort(doc_score)[::-1][:k]
+            #-----------------------------------
+        #     doc_score = self.p_embedding.get_scores(query_vec)[:k]
+        #     doc_indices = np.argsort(doc_score)[::-1]
+            
+        # doc_score = sorted(doc_score, reverse = True)
+        doc_score = sorted(doc_score, reverse = True)[:k]
         return doc_score, doc_indices
 
     def get_relevant_doc_bulk(
@@ -250,21 +269,31 @@ class SparseRetrieval:
         Note:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
-
-        query_vec = self.tfidfv.transform(queries)
-        assert (
-            np.sum(query_vec) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
-
-        result = query_vec * self.p_embedding.T
-        if not isinstance(result, np.ndarray):
-            result = result.toarray()
+        #-----------------------------------
+                # self.dictionary 
+                # self.bm25_model 
+                # self.bm25_index 
+        query_vec = [self.tokenize_fn(i) for i in queries]
         doc_scores = []
         doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
+        for i in tqdm(range(len(query_vec)), total =len(query_vec), desc = 'BM25 get scores...'):
+            bm_query = self.bm25_model[self.dictionary.doc2bow(query_vec[i])]
+            scores = self.bm25_index[bm_query]
+            indices = np.argsort(scores)[::-1][:k]
+            scores = sorted(scores, reverse = True)[:k]
+            doc_scores.append(scores)
+            doc_indices.append(indices)
+        #-----------------------------------
+
+        # query_vec = [self.tokenize_fn(i) for i in queries]
+        # doc_scores = []
+        # doc_indices = []
+        # for i in tqdm(range(len(query_vec)), total =len(query_vec), desc = 'BM25 get scores...'):
+            # scores = self.p_embedding.get_scores(query_vec[i])[:k]
+            # doc_scores.append(sorted(scores, reverse = True))
+            # indices = np.argsort(scores)[::-1]
+            # doc_indices.append(indices.tolist())
+
         return doc_scores, doc_indices
 
     def retrieve_faiss(
@@ -388,8 +417,9 @@ class SparseRetrieval:
 class DenseRetrieval:
     def __init__(
             self,
-            config,
-            tokenizer,
+            # config,
+            args,
+            # tokenizer,
             p_encoder_path,
             q_encoder_path,
             data_path: Optional[str] = "../data/",
@@ -397,11 +427,8 @@ class DenseRetrieval:
             ):
 
         
-        # 추가------------------------------------------------------------------------
-        # config = RobertaConfig.from_pretrained("klue/roberta-base")
-        # 추가------------------------------------------------------------------------
         self.data_path = data_path
-        self.config = config
+        self.config = AutoConfig.from_pretrained(args.config_name_dpr)
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
 
@@ -418,8 +445,11 @@ class DenseRetrieval:
         
         self.q_encoder = RobertaEncoder(self.config)
         self.q_encoder.load_state_dict(torch.load(q_encoder_path))
-
-        self.tokenizer = tokenizer
+        if torch.cuda.is_available():
+            self.p_encoder.cuda()
+            self.q_encoder.cuda()
+        # self.tokenizer = tokenizer
+        self.tokenizer = AutoTokenizer.from_pretrained(args.config_name_dpr)
         # 추가------------------------------------------------------------------------
 
         self.p_embedding = None  # get_sparse_embedding()로 생성합니다
@@ -441,6 +471,7 @@ class DenseRetrieval:
         if os.path.isfile(emd_path):
             with open(emd_path, "rb") as file:
                 self.p_embedding = pickle.load(file)
+            self.p_embedding = self.p_embedding.to('cuda')
             print("Embedding pickle load.")
         else:
             print("Build passage embedding")
@@ -453,33 +484,28 @@ class DenseRetrieval:
     
     # 추가------------------------------------------------------------------------
     def passage_embedding(self,valid_corpus):
-        self.p_encoder.to('cuda')
-        self.p_encoder.eval()
-
         p_embs = []
-        for p in tqdm(valid_corpus, total = len(valid_corpus), desc = "Dense Embedding Create..."):
-            # p = tokenizer(p, padding="max_length", truncation=True, return_tensors='pt').to('cuda')
-            inputs = self.tokenizer(p, padding="max_length", truncation=True, return_tensors='pt')
-            inputs.to('cuda')
-            with torch.no_grad():
+        with torch.no_grad():
+            self.p_encoder.eval()
+            for p in tqdm(valid_corpus, total = len(valid_corpus), desc = "Dense Embedding Create..."):
+                inputs = self.tokenizer(p, padding="max_length", truncation=True, return_tensors='pt')
                 p_emb = self.p_encoder(**inputs).to('cpu').numpy()
                 p_embs.append(p_emb)
+        torch.cuda.empty_cache()
         p_embs = torch.Tensor(p_embs).squeeze()
 
         return p_embs
     
-    def query_embedding(self, queries):
-        self.q_encoder.to('cuda')
-        self.q_encoder.eval()
-        if isinstance(queries, str):
-            queries = [queries]  # Ensure queries is a list of strings
-        q_seqs_val = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors='pt').to('cuda')
-        with torch.no_grad():
-            q_emb = self.q_encoder(**q_seqs_val) #(num_query, emb_dim)
-            q_emb.to('cuda')
-        return q_emb
     # 추가------------------------------------------------------------------------
-
+    def query_embedding(self, queries):
+        with torch.no_grad():
+            self.q_encoder.eval()
+            if isinstance(queries, str):
+                queries = [queries]  # Ensure queries is a list of strings
+            q_seqs_val = self.tokenizer(queries, padding="max_length", truncation=True, return_tensors='pt').to('cuda')
+            q_emb = self.q_encoder(**q_seqs_val) #(num_query, emb_dim)
+        return q_emb
+    
     def build_faiss(self, num_clusters=64) -> NoReturn:
 
         """
@@ -503,7 +529,10 @@ class DenseRetrieval:
             self.indexer = faiss.read_index(indexer_path)
 
         else:
-            p_emb = self.p_embedding.astype(np.float32).toarray()
+            # p_emb = self.p_embedding.astype(np.float32).toarray()
+            # p_emb = self.p_embedding.toarray()
+            p_emb = self.p_embedding.cpu().numpy().astype(np.float32)
+            # p_emb = self.p_embedding.toarray().astype(np.float32)
             emb_dim = p_emb.shape[-1]
 
             num_clusters = num_clusters
@@ -626,25 +655,16 @@ class DenseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
         query_vec = self.query_embedding(queries).to('cuda')
-        # assert (
-        #     np.sum(query_vec) != 0
-        # ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
-        print(f"query_vec shape:{query_vec.shape}")
-        print(f"p_embedding shape: {self.p_embedding.T.shape}")
-        
-        self.p_embedding = self.p_embedding.to('cuda')
-        result = query_vec @ self.p_embedding.T
-        # result = result.to('cpu').numpy()
-        if not isinstance(result, np.ndarray):
-            result = result.to('cpu').numpy()
-        #     result = result.numpy().toarray()
-        print(result.shape)
-        doc_scores = []
-        doc_indices = []
-        for i in range(result.shape[0]):
-            sorted_result = np.argsort(result[i, :])[::-1]
-            doc_scores.append(result[i, :][sorted_result].tolist()[:k])
-            doc_indices.append(sorted_result.tolist()[:k])
+        with torch.no_grad():
+            result = query_vec @ self.p_embedding.T
+            if not isinstance(result, np.ndarray):
+                result = result.to('cpu').numpy()
+            doc_scores = []
+            doc_indices = []
+            for i in range(result.shape[0]):
+                sorted_result = np.argsort(result[i, :])[::-1]
+                doc_scores.append(result[i, :][sorted_result].tolist()[:k])
+                doc_indices.append(sorted_result.tolist()[:k])
         return doc_scores, doc_indices
 
     def retrieve_faiss(
@@ -697,7 +717,7 @@ class DenseRetrieval:
                     queries, k=topk
                 )
             for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Sparse retrieval: ")
+                tqdm(query_or_dataset, desc="Dense retrieval: ")
             ):
                 tmp = {
                     # Query와 해당 id를 반환합니다.
@@ -735,7 +755,8 @@ class DenseRetrieval:
             np.sum(query_vec) != 0
         ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
-        q_emb = query_vec.toarray().astype(np.float32)
+        # q_emb = query_vec.toarray().astype(np.float32)
+        q_emb = query_vec.toarray().cpu().numpy().astype(np.float32)
         with timer("query faiss search"):
             D, I = self.indexer.search(q_emb, k)
 
@@ -755,12 +776,143 @@ class DenseRetrieval:
             vocab 에 없는 이상한 단어로 query 하는 경우 assertion 발생 (예) 뙣뙇?
         """
 
-        query_vecs = self.query_embedding(self, queries)
-        assert (
-            np.sum(query_vecs) != 0
-        ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
+        query_vecs = self.query_embedding(queries)
+        # assert (
+        #     np.sum(query_vecs) != 0
+        # ), "오류가 발생했습니다. 이 오류는 보통 query에 vectorizer의 vocab에 없는 단어만 존재하는 경우 발생합니다."
 
-        q_embs = query_vecs.toarray().astype(np.float32)
+        # q_embs = query_vecs.toarray().astype(np.float32)
+        q_embs = query_vecs.cpu().numpy().astype(np.float32)
         D, I = self.indexer.search(q_embs, k)
 
         return D.tolist(), I.tolist()
+    
+
+class HybridRetrieval:
+    def __init__(
+            self,
+            args,
+            # tokenize_fn,
+            p_encoder_path,
+            q_encoder_path,
+            data_path: Optional[str] = "../data/",
+            context_path: Optional[str] = "wikipedia_documents.json"
+    ):
+        self.sparse_retrieval = SparseRetrieval(
+            # tokenize_fn = tokenize_fn,
+            data_path = data_path,
+            context_path = context_path
+            )
+        self.dense_retreival = DenseRetrieval(
+            args=args, 
+            p_encoder_path=p_encoder_path, 
+            q_encoder_path=q_encoder_path,
+            data_path = data_path,
+            context_path = context_path
+            )
+        self.q_encoder = self.dense_retreival.q_encoder
+        print('Sparse Embedding Get Start')
+        self.sparse_retrieval.get_sparse_embedding()
+        print('Sparse Embedding Get End')
+
+        print('Dense Embedding Get Start')
+        self.dense_retreival.get_dense_embedding()
+        print('Dense Embedding Get End')
+        self.p_embedding = self.dense_retreival.p_embedding
+        if torch.cuda.is_available():
+            self.p_embedding = torch.Tensor(self.p_embedding).to("cuda")
+
+        with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
+            wiki = json.load(f)
+
+        self.contexts = list(
+            dict.fromkeys([v["text"] for v in wiki.values()])
+        )  # set 은 매번 순서가 바뀌므로
+    def retrieve(self, query_or_dataset, topk):
+        if isinstance(query_or_dataset, str):
+            doc_scores, doc_indices = self.get_sparse_idx_score(query_or_dataset)
+            print("[Search query]\n", query_or_dataset, "\n")
+
+            for i in range(topk):
+                print(f"Top-{i+1} passage with score {doc_scores[i]:4f}")
+                print(self.contexts[doc_indices[i]])
+
+            return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+        elif isinstance(query_or_dataset, Dataset):
+            total = []
+            with timer("query exhaustive search"):
+                doc_scores, doc_indices = self.get_sparse_idx_score_bulk(query_or_dataset["question"], topk=topk)
+            for idx, example in enumerate(
+                tqdm(query_or_dataset, desc = "Hybrid retrieval")
+            ):
+                tmp = {
+                    "question": example["question"],
+                    "id": example["id"],
+                    "context": " ".join(
+                        [self.contexts[pid] for pid in doc_indices[idx]]
+                        ),
+                }
+                if "context" in example.keys() and "answers" in example.keys():
+                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                    tmp["original_context"] = example["context"]
+                    tmp["answers"] = example["answers"]
+                total.append(tmp)
+
+        cqas = pd.DataFrame(total)
+        return cqas
+
+
+    def get_sparse_idx_score(self, query ,topk):
+        spr_score, spr_idx = self.sparse_retrieval.get_relevant_doc(
+            query,
+            k = 100
+        )
+        return self.__rerank(query, spr_idx, spr_score, topk)
+    
+    def get_sparse_idx_score_bulk(self, queries ,topk):
+        spr_score, spr_idx = self.sparse_retrieval.get_relevant_doc_bulk(
+            queries,
+            k = 100
+        )
+        return self.__rerank(queries, spr_idx, spr_score, topk)
+    
+
+    def __rerank(self, queries, spr_idx, spr_score, topk):
+        final_indices = []  # 최종적으로 선택된 문서 인덱스를 저장할 리스트
+        final_scores = []  # 최종 점수를 저장할 리스트
+
+        for i, query in enumerate(queries):
+            # 현재 쿼리에 대한 상위 문서 인덱스와 점수
+            indices = spr_idx[i].tolist()
+            scores = spr_score[i]
+
+
+            # 현재 쿼리에 대한 문서 인덱스와 점수를 텐서로 변환
+            indices_tensor = torch.tensor(indices, dtype=torch.long, device='cuda')
+            scores_tensor = torch.tensor(scores, device='cuda')
+
+            # 쿼리 임베딩 계산
+            with torch.no_grad():
+                q_emb = self.dense_retreival.query_embedding([query]).unsqueeze(0)  # 쿼리를 리스트로 변환하여 전달
+                selected_p_embs = self.p_embedding[indices_tensor]
+
+            # Dense Retrieval 점수 계산 (내적)
+            dense_scores = torch.matmul(q_emb, selected_p_embs.T).squeeze()
+
+            # 점수 결합
+            combined_scores = dense_scores + scores_tensor
+
+            # 상위 k개 문서 선택
+            _, topk_indices = torch.topk(combined_scores, k=topk)
+
+            # 선택된 문서 인덱스와 점수 저장
+            selected_indices = indices_tensor[topk_indices].cpu().tolist()
+            selected_scores = combined_scores[topk_indices].cpu().tolist()
+
+            final_indices.append(selected_indices)
+            final_scores.append(selected_scores)
+
+        return final_scores, final_indices
+
+
+
