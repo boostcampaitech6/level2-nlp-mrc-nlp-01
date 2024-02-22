@@ -525,7 +525,7 @@ class DenseRetrieval:
         with torch.no_grad():
             self.p_encoder.eval()
             for p in tqdm(valid_corpus, total = len(valid_corpus), desc = "Dense Embedding Create..."):
-                inputs = self.tokenizer(p, padding="max_length", truncation=True, return_tensors='pt')
+                inputs = self.tokenizer(p, padding="max_length", truncation=True, return_tensors='pt').to('cuda')
                 p_emb = self.p_encoder(**inputs).to('cpu').numpy()
                 p_embs.append(p_emb)
         torch.cuda.empty_cache()
@@ -629,7 +629,7 @@ class DenseRetrieval:
                 )
 
             if single_passage:
-                doc_scores = doc_scores.toarray()
+                doc_scores = np.array(doc_scores)
                 doc_scores = doc_scores / np.max(doc_scores)
                 cqas_list = [] 
                 for i in range(topk):

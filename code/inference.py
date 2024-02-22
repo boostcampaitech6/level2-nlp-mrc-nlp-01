@@ -242,8 +242,12 @@ def run_dense_retrieval(
             datasets["validation"], topk=data_args.top_k_retrieval
         )
     else:
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-        
+        if data_args.single_passage:
+            doc_scores, df_list = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=True)
+        else:
+            df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=False)
+
+
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
         f = Features(
@@ -271,8 +275,15 @@ def run_dense_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
+    if data_args.single_passage:
+        datasets_list = []
+        for i in range(data_args.top_k_retrieval):
+            dataset = DatasetDict({"validation": Dataset.from_pandas(df_list[i], features=f)})
+            datasets_list.append(dataset)
+        return datasets_list, doc_scores
+    else:
+        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+        return datasets
 
 def run_hybrid_retrieval(
     # tokenize_fn: Callable[[str], List[str]],
@@ -302,8 +313,10 @@ def run_hybrid_retrieval(
     #         datasets["validation"], topk=data_args.top_k_retrieval
     #     )
     # else:
-    df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-
+    if data_args.single_passage:
+        doc_scores, df_list = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=True)
+    else:
+        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=False)
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
         f = Features(
@@ -331,8 +344,15 @@ def run_hybrid_retrieval(
                 "question": Value(dtype="string", id=None),
             }
         )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
+    if data_args.single_passage:
+        datasets_list = []
+        for i in range(data_args.top_k_retrieval):
+            dataset = DatasetDict({"validation": Dataset.from_pandas(df_list[i], features=f)})
+            datasets_list.append(dataset)
+        return datasets_list, doc_scores
+    else:
+        datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
+        return datasets
 
 def run_mrc(
     data_args: DataTrainingArguments,
