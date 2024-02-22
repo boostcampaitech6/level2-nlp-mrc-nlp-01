@@ -9,13 +9,13 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/roberta-large",
+        default="uomnf97/klue-roberta-finetuned-korquad-v2",
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
     config_name: Optional[str] = field(
-        default="klue/roberta-large",
+        default="uomnf97/klue-roberta-finetuned-korquad-v2",
         metadata={
             "help": "Pretrained config name or path if not the same as model_name"
         },
@@ -98,7 +98,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=1,
+        default=30,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
