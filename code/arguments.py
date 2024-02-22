@@ -9,11 +9,12 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        default="klue/roberta-large",
+        default="klue/roberta-large",    #uomnf97/klue-roberta-finetuned-korquad-v2
         metadata={
             "help": "Path to pretrained model or model identifier from huggingface.co/models"
         },
     )
+
     config_name: Optional[str] = field(
         default="klue/roberta-large",
         metadata={
@@ -98,7 +99,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=20,
+        default=30,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
@@ -111,9 +112,12 @@ class DataTrainingArguments:
     #     metadata = {"help" : "Number of save model checkpoint"}
     # )
     dense_encoder_type: str = field(
-        default = 'hybrid', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
+        default = 'dense', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
     )
     
     remove_char: bool = field(
         default=False, metadata={"help": "Whether to remove special character before embedding"}
+    )
+    single_passage: bool = field(
+        default=True
     )
