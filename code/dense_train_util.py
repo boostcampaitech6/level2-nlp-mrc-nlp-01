@@ -13,6 +13,7 @@ from datasets import load_dataset
 from konlpy.tag import Mecab 
 from rank_bm25 import BM25Okapi
 import json
+from transformers import AutoTokenizer
 # from utils_qa import *
 def seed_everything(seed: int = 42):
     random.seed(seed)
@@ -126,8 +127,8 @@ class InBatchNegativeRandomDataset(Dataset):
             np_seqs["token_type_ids"]
         )
     
-def get_hard_negative(question, exclude_context, contexts, mecab, bm25):
-    tokenized_question = mecab.morphs(question)
+def get_hard_negative(question, exclude_context, contexts, tokenizer, bm25):
+    tokenized_question = tokenizer(question)
     scores = bm25.get_scores(tokenized_question)
     ranked_contexts = np.argsort(scores)[::-1]  # 점수에 따라 내림차순 정렬
     
@@ -139,22 +140,23 @@ def get_hard_negative(question, exclude_context, contexts, mecab, bm25):
     return set_ranked_contexts[select_idx]
 
 def get_negative_dataset(save_name):
-    mecab = Mecab() 
+    #tokenizer = tokenizer()
     dataset = load_dataset('squad_kor_v1')
     contexts = list(
             dict.fromkeys([v["context"] for v in dataset['train']])
         )
-
+    tokenizer = AutoTokenizer.from_pretrained('klue/roberta-large')
+    
     tokenized_contexts = []
 
     for text in tqdm(contexts, total = len(contexts), desc = 'Tokenizing...'):
-        tokenized_contexts.append(mecab.morphs(text))
+        tokenized_contexts.append(tokenizer.tokenize(text))
     print('BM25 Creating..')
     bm25 = BM25Okapi(tokenized_contexts)
 
     enhanced_dataset = []
     for item in tqdm(dataset['train'], total = len(dataset['train']), desc = 'Datasets Create...'):
-        hard_negative_context = get_hard_negative(item['question'], item['context'],contexts, mecab, bm25)
+        hard_negative_context = get_hard_negative(item['question'], item['context'],contexts, tokenizer, bm25)
         enhanced_dataset.append({
             'id': item['id'],
             'title': item['title'],

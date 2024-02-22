@@ -21,7 +21,7 @@ from transformers import (AutoTokenizer,
                           RobertaPreTrainedModel,
                           get_linear_schedule_with_warmup)
 from dense_models import RobertaEncoder, BertEncoder
-from utils_qa import get_negative_dataset
+
 from dense_train_util import InBatchNegativeRandomDataset
 
 
@@ -154,8 +154,8 @@ def main(args):
     
     p_encoder, q_encoder = train(train_args, train_dataset, p_encoder, q_encoder)
 
-    torch.save(p_encoder.state_dict(), '/data/ephemeral/odqa/dense_model/' + 'p_encoder.pt')
-    torch.save(q_encoder.state_dict(), '/data/ephemeral/odqa/dense_model/' + 'q_encoder.pt')
+    torch.save(p_encoder.state_dict(), '/data/ephemeral/MRC/dense_model/' + 'p_encoder.pt')
+    torch.save(q_encoder.state_dict(), '/data/ephemeral/MRC/dense_model/' + 'q_encoder.pt')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

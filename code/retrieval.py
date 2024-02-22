@@ -12,6 +12,7 @@ import pandas as pd
 from datasets import Dataset, concatenate_datasets, load_from_disk
 from sklearn.feature_extraction.text import TfidfVectorizer
 from tqdm.auto import tqdm
+import re
 
 import torch
 from transformers import RobertaConfig, AutoConfig, AutoTokenizer
@@ -24,8 +25,6 @@ from gensim.similarities import SparseMatrixSimilarity
 seed = 2024
 random.seed(seed) # python random seed 고정
 np.random.seed(seed) # numpy random seed 고정
-
-
 
 @contextmanager
 def timer(name):
@@ -43,6 +42,7 @@ class SparseRetrieval:
         data_path: Optional[str] = "../data/",
         context_path: Optional[str] = "wikipedia_documents.json",
         remove_char=False,
+        single_passage=True
     ):
 
         """
@@ -67,8 +67,8 @@ class SparseRetrieval:
         """
 
         # self.data_path = data_path
-        mecab = Mecab()
-        self.tokenize_fn = mecab.morphs
+        tokenizer = AutoTokenizer.from_pretrained(args.config_name)
+        self.tokenize_fn = tokenizer.tokenize
 
         with open(os.path.join(data_path, context_path), "r", encoding="utf-8") as f:
             wiki = json.load(f)
@@ -88,8 +88,9 @@ class SparseRetrieval:
         self.tokenized_corpus = [
             self.tokenize_fn(text) for text in self.contexts
         ]
-        # self.get_sparse_embedding()
-        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
+
+        #self.sparse_retrieval.get_sparse_embedding()
+        #self.p_embedding = None #self.sparse_retrieval.p_embedding  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
 
     def get_sparse_embedding(self):
@@ -172,7 +173,7 @@ class SparseRetrieval:
             print("Faiss Indexer Saved.")
 
     def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, single_passage: Optional[bool] = True,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -208,33 +209,60 @@ class SparseRetrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
 
         elif isinstance(query_or_dataset, Dataset):
- 
+
             # Retrieve한 Passage를 pd.DataFrame으로 반환합니다.
             total = []
             with timer("query exhaustive search"):
                 doc_scores, doc_indices = self.get_relevant_doc_bulk(
                     query_or_dataset["question"], k=topk
                 )
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Sparse retrieval: ")
-            ):
-                tmp = {
-                    # Query와 해당 id를 반환합니다.
-                    "question": example["question"],
-                    "id": example["id"],
-                    # Retrieve한 Passage의 id, context를 반환합니다.
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
 
-            cqas = pd.DataFrame(total)
-            return cqas
+            if single_passage:
+                doc_scores = doc_scores.toarray()
+                doc_scores = doc_scores / np.max(doc_scores)
+                cqas_list = [] 
+                for i in range(topk):
+                    total = []
+                    for idx, example in enumerate(
+                        tqdm(query_or_dataset, desc="Sparse retrieval: ")
+                    ):
+                        tmp = {
+                            # Query와 해당 id를 반환합니다.
+                            "question": example["question"],
+                            "id": example["id"],
+                            # Retrieve한 Passage의 id, context를 반환합니다.
+                            "context": self.contexts[doc_indices[idx][i]],
+                        }
+                        if "context" in example.keys() and "answers" in example.keys():
+                            # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                            tmp["original_context"] = example["context"]
+                            tmp["answers"] = example["answers"]
+                        total.append(tmp)
+                    cqas = pd.DataFrame(total)
+                    cqas_list.append(cqas)    
+                return doc_scores, cqas_list
+            
+            else:
+                for idx, example in enumerate(
+                    tqdm(query_or_dataset, desc="Sparse retrieval: ")
+                ):
+                    tmp = {
+                        # Query와 해당 id를 반환합니다.
+                        "question": example["question"],
+                        "id": example["id"],
+                        # Retrieve한 Passage의 id, context를 반환합니다.
+                        "context": " ".join(
+                            [self.contexts[pid] for pid in doc_indices[idx]]
+                        ),
+                    }
+                    if "context" in example.keys() and "answers" in example.keys():
+                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                        tmp["original_context"] = example["context"]
+                        tmp["answers"] = example["answers"]
+                    total.append(tmp)
+
+                cqas = pd.DataFrame(total)
+                return cqas
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 
@@ -460,7 +488,8 @@ class DenseRetrieval:
         self.tokenizer = AutoTokenizer.from_pretrained(args.config_name_dpr)
         # 추가------------------------------------------------------------------------
 
-        self.p_embedding = None  # get_sparse_embedding()로 생성합니다
+        #self.dense_retreival.get_dense_embedding()
+        self.p_embedding = None#self.dense_retreival.p_embedding  # get_sparse_embedding()로 생성합니다
         self.indexer = None  # build_faiss()로 생성합니다.
     # 변경------------------------------------------------------------------------
     def get_dense_embedding(self):
@@ -555,7 +584,7 @@ class DenseRetrieval:
             print("Faiss Indexer Saved.")
 
     def retrieve(
-        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1
+        self, query_or_dataset: Union[str, Dataset], topk: Optional[int] = 1, single_passage: Optional[bool] = True,
     ) -> Union[Tuple[List, List], pd.DataFrame]:
 
         """
@@ -598,26 +627,53 @@ class DenseRetrieval:
                 doc_scores, doc_indices = self.get_relevant_doc_bulk(
                     query_or_dataset["question"], k=topk
                 )
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc="Dense retrieval: ")
-            ):
-                tmp = {
-                    # Query와 해당 id를 반환합니다.
-                    "question": example["question"],
-                    "id": example["id"],
-                    # Retrieve한 Passage의 id, context를 반환합니다.
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                    ),
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
 
-            cqas = pd.DataFrame(total)
-            return cqas
+            if single_passage:
+                doc_scores = doc_scores.toarray()
+                doc_scores = doc_scores / np.max(doc_scores)
+                cqas_list = [] 
+                for i in range(topk):
+                    total = []
+                    for idx, example in enumerate(
+                        tqdm(query_or_dataset, desc="Dense retrieval: ")
+                    ):
+                        tmp = {
+                            # Query와 해당 id를 반환합니다.
+                            "question": example["question"],
+                            "id": example["id"],
+                            # Retrieve한 Passage의 id, context를 반환합니다.
+                            "context": self.contexts[doc_indices[idx][i]],
+                        }
+                        if "context" in example.keys() and "answers" in example.keys():
+                            # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                            tmp["original_context"] = example["context"]
+                            tmp["answers"] = example["answers"]
+                        total.append(tmp)
+                    cqas = pd.DataFrame(total)
+                    cqas_list.append(cqas)    
+                return doc_scores, cqas_list
+            
+            else:
+                for idx, example in enumerate(
+                    tqdm(query_or_dataset, desc="Dense retrieval: ")
+                ):
+                    tmp = {
+                        # Query와 해당 id를 반환합니다.
+                        "question": example["question"],
+                        "id": example["id"],
+                        # Retrieve한 Passage의 id, context를 반환합니다.
+                        "context": " ".join(
+                            [self.contexts[pid] for pid in doc_indices[idx]]
+                        ),
+                    }
+                    if "context" in example.keys() and "answers" in example.keys():
+                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                        tmp["original_context"] = example["context"]
+                        tmp["answers"] = example["answers"]
+                    total.append(tmp)
+
+                cqas = pd.DataFrame(total)
+                return cqas
 
     def get_relevant_doc(self, query: str, k: Optional[int] = 1) -> Tuple[List, List]:
 
@@ -837,7 +893,8 @@ class HybridRetrieval:
         self.contexts = list(
             dict.fromkeys([v["text"] for v in wiki.values()])
         )  # set 은 매번 순서가 바뀌므로
-    def retrieve(self, query_or_dataset, topk):
+            
+    def retrieve(self, query_or_dataset, topk, single_passage):
         if isinstance(query_or_dataset, str):
             doc_scores, doc_indices = self.get_sparse_idx_score(query_or_dataset)
             print("[Search query]\n", query_or_dataset, "\n")
@@ -847,28 +904,56 @@ class HybridRetrieval:
                 print(self.contexts[doc_indices[i]])
 
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
+        
         elif isinstance(query_or_dataset, Dataset):
-            total = []
-            with timer("query exhaustive search"):
-                doc_scores, doc_indices = self.get_sparse_idx_score_bulk(query_or_dataset["question"], topk=topk)
-            for idx, example in enumerate(
-                tqdm(query_or_dataset, desc = "Hybrid retrieval")
-            ):
-                tmp = {
-                    "question": example["question"],
-                    "id": example["id"],
-                    "context": " ".join(
-                        [self.contexts[pid] for pid in doc_indices[idx]]
-                        ),
-                }
-                if "context" in example.keys() and "answers" in example.keys():
-                    # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
-                    tmp["original_context"] = example["context"]
-                    tmp["answers"] = example["answers"]
-                total.append(tmp)
+            if single_passage:
+                doc_scores = doc_scores.toarray()
+                doc_scores = doc_scores / np.max(doc_scores)
+                cqas_list = [] 
+                for i in range(topk):
+                    total = []
+                    for idx, example in enumerate(
+                        tqdm(query_or_dataset, desc="Hybrid retrieval: ")
+                    ):
+                        tmp = {
+                            # Query와 해당 id를 반환합니다.
+                            "question": example["question"],
+                            "id": example["id"],
+                            # Retrieve한 Passage의 id, context를 반환합니다.
+                            "context": self.contexts[doc_indices[idx][i]],
+                        }
+                        if "context" in example.keys() and "answers" in example.keys():
+                            # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                            tmp["original_context"] = example["context"]
+                            tmp["answers"] = example["answers"]
+                        total.append(tmp)
+                    cqas = pd.DataFrame(total)
+                    cqas_list.append(cqas)    
+                return doc_scores, cqas_list
 
-        cqas = pd.DataFrame(total)
-        return cqas
+
+            else:
+                total = []
+                with timer("query exhaustive search"):
+                    doc_scores, doc_indices = self.get_sparse_idx_score_bulk(query_or_dataset["question"], topk=topk)
+                for idx, example in enumerate(
+                    tqdm(query_or_dataset, desc = "Hybrid retrieval: ")
+                ):
+                    tmp = {
+                        "question": example["question"],
+                        "id": example["id"],
+                        "context": " ".join(
+                            [self.contexts[pid] for pid in doc_indices[idx]]
+                            ),
+                    }
+                    if "context" in example.keys() and "answers" in example.keys():
+                        # validation 데이터를 사용하면 ground_truth context와 answer도 반환합니다.
+                        tmp["original_context"] = example["context"]
+                        tmp["answers"] = example["answers"]
+                    total.append(tmp)
+
+            cqas = pd.DataFrame(total)
+            return cqas
 
 
     def get_sparse_idx_score(self, query ,topk):
@@ -897,7 +982,7 @@ class HybridRetrieval:
 
 
             # 현재 쿼리에 대한 문서 인덱스와 점수를 텐서로 변환
-            indices_tensor = torch.tensor(indices, dtype=torch.long, device='cuda')
+            indices_tensor = torch.tensor(indices, dtype=torch.long, device='cpu')
             scores_tensor = torch.tensor(scores, device='cuda')
 
             # 쿼리 임베딩 계산

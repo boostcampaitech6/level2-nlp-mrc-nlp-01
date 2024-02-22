@@ -98,7 +98,7 @@ class DataTrainingArguments:
         default=64, metadata={"help": "Define how many clusters to use for faiss."}
     )
     top_k_retrieval: int = field(
-        default=20,
+        default=1,
         metadata={
             "help": "Define how many top-k passages to retrieve based on similarity."
         },
@@ -111,9 +111,12 @@ class DataTrainingArguments:
     #     metadata = {"help" : "Number of save model checkpoint"}
     # )
     dense_encoder_type: str = field(
-        default = 'hybrid', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
+        default = 'sparse', metadata = {"help": "Whether to run passage retrieval using dense embedding."}
     )
     
     remove_char: bool = field(
         default=False, metadata={"help": "Whether to remove special character before embedding"}
+    )
+    single_passage: bool = field(
+        default=True
     )

@@ -5,12 +5,12 @@ Open-Domain Question Answering 을 수행하는 inference 코드 입니다.
 """
 from single_passage import post_process_voting
 
-import argparse
 import logging
 import sys, os
 from typing import Callable, Dict, List, NoReturn, Tuple
 
 import numpy as np
+import pandas as pd
 from arguments import DataTrainingArguments, ModelArguments
 from datasets import (
     Dataset,
@@ -21,8 +21,7 @@ from datasets import (
     load_from_disk,
     load_metric,
 )
-from konlpy.tag import Mecab
-from rank_bm25 import BM25Okapi
+from retrieval import SparseRetrieval
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -34,9 +33,8 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from utils_qa import *
-from retrieval import SparseRetrieval, DenseRetrieval, HybridRetrieval
-from dense_models import BertEncoder, RobertaEncoder
+from utils_qa import check_no_error, postprocess_qa_predictions
+
 logger = logging.getLogger(__name__)
 
 
@@ -51,7 +49,6 @@ def main():
 
     training_args.do_train = True
     training_args.output_dir = '../outputs/' + model_args.model_name_or_path.split('/')[-1]
-    training_args.save_total_limit = 1
     if not os.path.exists(training_args.output_dir):
         os.mkdir(training_args.output_dir)
 
@@ -80,78 +77,40 @@ def main():
         if model_args.config_name
         else model_args.model_name_or_path,
     )
-
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name
         if model_args.tokenizer_name
         else model_args.model_name_or_path,
         use_fast=True,
     )
-    # mecab = Mecab()
     model = AutoModelForQuestionAnswering.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
     )
-    torch.cuda.empty_cache()
-    if data_args.dense_encoder_type == 'dense':
-        print('Retriever Part Start...')
-        if data_args.eval_retrieval:
-            if data_args.single_passage:
-                datasets, doc_scores = run_dense_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
-                )
-            else:
-                datasets = run_dense_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
-        )
+
+    # True일 경우 : run passage retrieval
+    if data_args.eval_retrieval:
+        if data_args.single_passage:
+            datasets, doc_scores = run_sparse_retrieval(
+                tokenizer.tokenize, datasets, training_args, data_args,
+            )
         else:
-            datasets = run_dense_retrieval(
+            datasets = run_sparse_retrieval(
                 tokenizer.tokenize, datasets, training_args, data_args,
         )
-        print('Retriever Part End...')
-        torch.cuda.empty_cache()
-        # eval or predict mrc model
-        if training_args.do_eval or training_args.do_predict:
-            run_mrc(data_args, training_args, model_args, datasets, tokenizer, model, doc_scores)
-        torch.cuda.empty_cache()
-
-    elif data_args.dense_encoder_type == 'sparse':
-        if data_args.eval_retrieval:
-            if data_args.single_passage:
-                datasets, doc_scores = run_sparse_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
-                )
-            else:
-                datasets = run_sparse_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
+    else:
+        datasets = run_sparse_retrieval(
+            tokenizer.tokenize, datasets, training_args, data_args,
         )
-        torch.cuda.empty_cache()
-        # eval or predict mrc model
-        if training_args.do_eval or training_args.do_predict:
-            run_mrc(data_args, training_args, model_args, datasets, tokenizer, model, doc_scores)
 
-    elif data_args.dense_encoder_type == 'hybrid':
-        print('Retriever Part Start...')
-        if data_args.eval_retrieval:
-            if data_args.single_passage:
-                datasets, doc_scores = run_hybrid_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
-                )
-            else:
-                datasets = run_hybrid_retrieval(
-                    tokenizer.tokenize, datasets, training_args, data_args,
-        )
-        print('Retriever Part End...')
-        torch.cuda.empty_cache()
-        # eval or predict mrc model
-        if training_args.do_eval or training_args.do_predict:
-            run_mrc(data_args, training_args, model_args, datasets, tokenizer, model, doc_scores)
-        torch.cuda.empty_cache()
+    # eval or predict mrc model
+    if training_args.do_eval or training_args.do_predict:
+        run_mrc(data_args, training_args, model_args, datasets, tokenizer, model, doc_scores)
+
 
 def run_sparse_retrieval(
-    # tokenize_fn: Callable[[str], List[str]],
-    args: ModelArguments,
+    tokenize_fn: Callable[[str], List[str]],
     datasets: DatasetDict,
     training_args: TrainingArguments,
     data_args: DataTrainingArguments,
@@ -161,7 +120,7 @@ def run_sparse_retrieval(
 
     # Query에 맞는 Passage들을 Retrieval 합니다.
     retriever = SparseRetrieval(
-        args=ModelArguments, data_path=data_path, context_path=context_path, remove_char=data_args.remove_char
+        tokenize_fn=tokenize_fn, data_path=data_path, context_path=context_path
     )
     retriever.get_sparse_embedding()
 
@@ -175,6 +134,8 @@ def run_sparse_retrieval(
             doc_scores, df_list = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=True)
         else:
             df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval, single_passage=False)
+
+
 
     # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
     if training_args.do_predict:
@@ -214,124 +175,6 @@ def run_sparse_retrieval(
         datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
         return datasets
 
-def run_dense_retrieval(
-    args: ModelArguments,
-    datasets: DatasetDict,
-    training_args: TrainingArguments,
-    data_args: DataTrainingArguments,
-    p_encoder_path: str = '../dense_model/p_encoder.pt',
-    q_encoder_path: str = '../dense_model/q_encoder.pt',
-    data_path: str = "../data",
-    context_path: str = "wikipedia_documents.json",
-) -> DatasetDict:
-
-    # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = DenseRetrieval(
-        args = ModelArguments,
-        p_encoder_path = p_encoder_path,
-        q_encoder_path = q_encoder_path,
-        data_path=data_path, 
-        context_path=context_path
-    )
-    retriever.get_dense_embedding()
-
-    if data_args.use_faiss:
-        retriever.build_faiss(num_clusters=data_args.num_clusters)
-        df = retriever.retrieve_faiss(
-            datasets["validation"], topk=data_args.top_k_retrieval
-        )
-    else:
-        df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-        
-    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
-    if training_args.do_predict:
-        f = Features(
-            {
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-
-    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
-    elif training_args.do_eval:
-        f = Features(
-            {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
-
-def run_hybrid_retrieval(
-    # tokenize_fn: Callable[[str], List[str]],
-    args: ModelArguments,
-    datasets: DatasetDict,
-    training_args: TrainingArguments,
-    data_args: DataTrainingArguments,
-    p_encoder_path: str = '../dense_model/p_encoder.pt',
-    q_encoder_path: str = '../dense_model/q_encoder.pt',
-    data_path: str = "../data",
-    context_path: str = "wikipedia_documents.json",
-) -> DatasetDict:
-
-    # Query에 맞는 Passage들을 Retrieval 합니다.
-    retriever = HybridRetrieval(
-        args = ModelArguments, 
-        p_encoder_path = p_encoder_path, 
-        q_encoder_path = q_encoder_path,
-        data_path=data_path, 
-        context_path=context_path
-    )
-    # retriever.get_sparse_embedding()
-
-    # if data_args.use_faiss:
-    #     retriever.build_faiss(num_clusters=data_args.num_clusters)
-    #     df = retriever.retrieve_faiss(
-    #         datasets["validation"], topk=data_args.top_k_retrieval
-    #     )
-    # else:
-    df = retriever.retrieve(datasets["validation"], topk=data_args.top_k_retrieval)
-
-    # test data 에 대해선 정답이 없으므로 id question context 로만 데이터셋이 구성됩니다.
-    if training_args.do_predict:
-        f = Features(
-            {
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-
-    # train data 에 대해선 정답이 존재하므로 id question context answer 로 데이터셋이 구성됩니다.
-    elif training_args.do_eval:
-        f = Features(
-            {
-                "answers": Sequence(
-                    feature={
-                        "text": Value(dtype="string", id=None),
-                        "answer_start": Value(dtype="int32", id=None),
-                    },
-                    length=-1,
-                    id=None,
-                ),
-                "context": Value(dtype="string", id=None),
-                "id": Value(dtype="string", id=None),
-                "question": Value(dtype="string", id=None),
-            }
-        )
-    datasets = DatasetDict({"validation": Dataset.from_pandas(df, features=f)})
-    return datasets
 
 def run_mrc(
     data_args: DataTrainingArguments,
@@ -504,4 +347,3 @@ def run_mrc(
 
 if __name__ == "__main__":
     main()
-
