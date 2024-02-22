@@ -906,8 +906,18 @@ class HybridRetrieval:
             return (doc_scores, [self.contexts[doc_indices[i]] for i in range(topk)])
         
         elif isinstance(query_or_dataset, Dataset):
+            total = []
+            with timer("query exhaustive search"):
+                doc_scores, doc_indices = self.get_sparse_idx_score_bulk(query_or_dataset["question"], topk=topk)
+            
+            # with timer("query exhaustive search"):
+            #     doc_scores, doc_indices = self.get_relevant_doc_bulk(
+            #         query_or_dataset["question"], k=topk
+            #     )
+
+                
             if single_passage:
-                doc_scores = doc_scores.toarray()
+                doc_scores = np.array(doc_scores)
                 doc_scores = doc_scores / np.max(doc_scores)
                 cqas_list = [] 
                 for i in range(topk):
@@ -933,9 +943,6 @@ class HybridRetrieval:
 
 
             else:
-                total = []
-                with timer("query exhaustive search"):
-                    doc_scores, doc_indices = self.get_sparse_idx_score_bulk(query_or_dataset["question"], topk=topk)
                 for idx, example in enumerate(
                     tqdm(query_or_dataset, desc = "Hybrid retrieval: ")
                 ):
