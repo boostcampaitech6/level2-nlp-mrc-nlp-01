@@ -218,7 +218,7 @@ class SparseRetrieval:
                 )
 
             if single_passage:
-                doc_scores = doc_scores.toarray()
+                doc_scores = np.array(doc_scores)
                 doc_scores = doc_scores / np.max(doc_scores)
                 cqas_list = [] 
                 for i in range(topk):
@@ -982,7 +982,7 @@ class HybridRetrieval:
 
 
             # 현재 쿼리에 대한 문서 인덱스와 점수를 텐서로 변환
-            indices_tensor = torch.tensor(indices, dtype=torch.long, device='cpu')
+            indices_tensor = torch.tensor(indices, dtype=torch.long, device='cuda')
             scores_tensor = torch.tensor(scores, device='cuda')
 
             # 쿼리 임베딩 계산

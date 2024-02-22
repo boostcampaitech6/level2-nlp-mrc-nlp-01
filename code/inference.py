@@ -9,6 +9,7 @@ import argparse
 import logging
 import sys, os
 from typing import Callable, Dict, List, NoReturn, Tuple
+import pandas as pd 
 
 import numpy as np
 from arguments import DataTrainingArguments, ModelArguments
@@ -350,7 +351,7 @@ def run_mrc(
         datasets = [datasets]
     eval_dataset = []
 
-    for i in range(k):
+    for i in tqdm(range(k)):
         # eval 혹은 prediction에서만 사용함
         column_names = datasets[i]["validation"].column_names
 
